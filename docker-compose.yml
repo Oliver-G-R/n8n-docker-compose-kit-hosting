@@ -83,7 +83,6 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
       - ./local-files:/files
-      - n8n_storage:/home/node/.n8n
     links: 
       - postgres
     depends_on:
