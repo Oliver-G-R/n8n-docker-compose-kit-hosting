@@ -1,6 +1,43 @@
 volumes:
   db_storage:
+  redis_storage:
   n8n_data:
+
+
+x-shared: &shared
+  restart: always
+  image: docker.n8n.io/n8nio/n8n
+  environment:
+    # N8N 
+    - N8N_HOST=${SUBDOMAIN}.${DOMAIN_NAME}
+    - N8N_PORT=5678
+    - N8N_PROTOCOL=https
+    - NODE_ENV=production
+    - WEBHOOK_URL=https://${SUBDOMAIN}.${DOMAIN_NAME}/
+    - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+
+    # BASE DE DATOS
+    - DB_TYPE=postgresdb
+    - DB_POSTGRESDB_HOST=postgres
+    - DB_POSTGRESDB_PORT=5432
+    - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+    - DB_POSTGRESDB_USER=${POSTGRES_NON_ROOT_USER}
+    - DB_POSTGRESDB_PASSWORD=${POSTGRES_NON_ROOT_PASSWORD}
+
+    # REDIS 
+    - EXECUTIONS_MODE=queue
+    - QUEUE_BULL_REDIS_HOST=redis
+    - QUEUE_HEALTH_CHECK_ACTIVE=true
+    - N8N_ENCRYPTION_KEY=${ENCRYPTION_KEY}
+  volumes:
+    - n8n_data:/home/node/.n8n
+    - ./local-files:/files
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 
 services:
   postgres:
@@ -22,32 +59,24 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:6-alpine
+    restart: always
+    volumes:
+      - redis_storage:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   n8n:
-    image: docker.n8n.io/n8nio/n8n
-    restart: always
+    <<: *shared
     ports:
-      - "127.0.0.1:5678:5678"
-    environment:
-      - N8N_HOST=${SUBDOMAIN}.${DOMAIN_NAME}
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=https
-      - NODE_ENV=production
-      - WEBHOOK_URL=https://${SUBDOMAIN}.${DOMAIN_NAME}/
-      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+    - "127.0.0.1:5678:5678"
 
-      # BASE DE DATOS
-      - DB_TYPE=postgresdb
-      - DB_POSTGRESDB_HOST=postgres
-      - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
-      - DB_POSTGRESDB_USER=${POSTGRES_NON_ROOT_USER}
-      - DB_POSTGRESDB_PASSWORD=${POSTGRES_NON_ROOT_PASSWORD}
-    volumes:
-      - n8n_data:/home/node/.n8n
-      - ./local-files:/files
-    links: 
-      - postgres
+  n8n-worker:
+    <<: *shared
+    command: worker
     depends_on:
-      postgres:
-        condition: service_healthy
+      - n8n
